@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rcrowley/go-metrics"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 // ErrClosedConsumerGroup is the error returned when a method is called on a consumer group that has been closed.
@@ -148,7 +150,7 @@ func (c *consumerGroup) Close() (err error) {
 
 		// leave group
 		if e := c.leave(); e != nil {
-			err = e
+			err = multierror.Append(err, fmt.Errorf("error leaving: %w", e)).ErrorOrNil()
 		}
 
 		// drain errors
@@ -156,11 +158,11 @@ func (c *consumerGroup) Close() (err error) {
 			close(c.errors)
 		}()
 		for e := range c.errors {
-			err = e
+			err = multierror.Append(err, fmt.Errorf("error from consuming: %w", e)).ErrorOrNil()
 		}
 
 		if e := c.client.Close(); e != nil {
-			err = e
+			err = multierror.Append(err, fmt.Errorf("error closing client: %w", e)).ErrorOrNil()
 		}
 	})
 	return

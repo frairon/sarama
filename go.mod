@@ -11,6 +11,7 @@ require (
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/frankban/quicktest v1.14.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jcmturner/gofork v1.0.0
 	github.com/jcmturner/gokrb5/v8 v8.4.2
 	github.com/klauspost/compress v1.14.4
@@ -22,7 +23,6 @@ require (
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
 
 retract (
