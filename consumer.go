@@ -27,12 +27,13 @@ type ConsumerMessage struct {
 // It wraps an error and includes the topic and partition.
 type ConsumerError struct {
 	Topic     string
+	Message   string
 	Partition int32
 	Err       error
 }
 
 func (ce ConsumerError) Error() string {
-	return fmt.Sprintf("kafka: error while consuming %s/%d: %s", ce.Topic, ce.Partition, ce.Err)
+	return fmt.Sprintf("kafka: error while consuming %s/%d (message=%s): %s", ce.Topic, ce.Partition, ce.Message, ce.Err)
 }
 
 func (ce ConsumerError) Unwrap() error {

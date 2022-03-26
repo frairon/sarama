@@ -499,10 +499,11 @@ func (c *consumerGroup) leave() error {
 	}
 }
 
-func (c *consumerGroup) handleError(err error, topic string, partition int32) {
+func (c *consumerGroup) handleError(err error, message string, topic string, partition int32) {
 	if _, ok := err.(*ConsumerError); !ok && topic != "" && partition > -1 {
 		err = &ConsumerError{
 			Topic:     topic,
+			Message:   message,
 			Partition: partition,
 			Err:       err,
 		}
@@ -677,7 +678,7 @@ func newConsumerGroupSession(ctx context.Context, parent *consumerGroup, claims 
 			// handle POM errors
 			go func(topic string, partition int32) {
 				for err := range pom.Errors() {
-					sess.parent.handleError(err, topic, partition)
+					sess.parent.handleError(err, "partitin offset manager error", topic, partition)
 				}
 			}(topic, partition)
 		}
@@ -756,14 +757,14 @@ func (s *consumerGroupSession) consume(topic string, partition int32) {
 	// create new claim
 	claim, err := newConsumerGroupClaim(s, topic, partition, offset)
 	if err != nil {
-		s.parent.handleError(err, topic, partition)
+		s.parent.handleError(err, "error creating new consumer claim", topic, partition)
 		return
 	}
 
 	// handle errors
 	go func() {
 		for err := range claim.Errors() {
-			s.parent.handleError(err, topic, partition)
+			s.parent.handleError(err, "claim error", topic, partition)
 		}
 	}()
 
@@ -778,13 +779,13 @@ func (s *consumerGroupSession) consume(topic string, partition int32) {
 
 	// start processing
 	if err := s.handler.ConsumeClaim(s, claim); err != nil {
-		s.parent.handleError(err, topic, partition)
+		s.parent.handleError(err, "error consuming claim", topic, partition)
 	}
 
 	// ensure consumer is closed & drained
 	claim.AsyncClose()
 	for _, err := range claim.waitClosed() {
-		s.parent.handleError(err, topic, partition)
+		s.parent.handleError(err, "error claim wait closed", topic, partition)
 	}
 }
 
@@ -799,7 +800,7 @@ func (s *consumerGroupSession) release(withCleanup bool) (err error) {
 	s.releaseOnce.Do(func() {
 		if withCleanup {
 			if e := s.handler.Cleanup(s); e != nil {
-				s.parent.handleError(e, "", -1)
+				s.parent.handleError(e, "error while releasing while cleaning up the handler", "", -1)
 				err = e
 			}
 		}
@@ -839,7 +840,7 @@ func (s *consumerGroupSession) heartbeatLoop() {
 		coordinator, err := s.parent.client.Coordinator(s.parent.groupID)
 		if err != nil {
 			if retries <= 0 {
-				s.parent.handleError(err, "", -1)
+				s.parent.handleError(err, "error while getting the coordinator", "", -1)
 				return
 			}
 			retryBackoff.Reset(s.parent.config.Metadata.Retry.Backoff)
@@ -857,7 +858,7 @@ func (s *consumerGroupSession) heartbeatLoop() {
 			_ = coordinator.Close()
 
 			if retries <= 0 {
-				s.parent.handleError(err, "", -1)
+				s.parent.handleError(err, "error sending heartbeat heartbeat", "", -1)
 				return
 			}
 
@@ -874,7 +875,7 @@ func (s *consumerGroupSession) heartbeatLoop() {
 		case ErrUnknownMemberId, ErrIllegalGeneration:
 			return
 		default:
-			s.parent.handleError(resp.Err, "", -1)
+			s.parent.handleError(resp.Err, "response error from sending heartbeat", "", -1)
 			return
 		}
 
@@ -951,7 +952,7 @@ func newConsumerGroupClaim(sess *consumerGroupSession, topic string, partition i
 
 	go func() {
 		for err := range pcm.Errors() {
-			sess.parent.handleError(err, topic, partition)
+			sess.parent.handleError(err, "error from partition consumer", topic, partition)
 		}
 	}()
 
