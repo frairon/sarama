@@ -411,10 +411,11 @@ type partitionConsumer struct {
 
 var errTimedOut = errors.New("timed out feeding messages to the user") // not user-facing
 
-func (child *partitionConsumer) sendError(err error) {
+func (child *partitionConsumer) sendError(err error, message string) {
 	cErr := &ConsumerError{
 		Topic:     child.topic,
 		Partition: child.partition,
+		Message:   message,
 		Err:       err,
 	}
 
@@ -445,7 +446,7 @@ func (child *partitionConsumer) dispatcher() {
 			}
 
 			if err := child.dispatch(); err != nil {
-				child.sendError(err)
+				child.sendError(err, "part consumer: error dispatching")
 				child.trigger <- none{}
 			}
 		}
@@ -723,7 +724,7 @@ func (child *partitionConsumer) parseResponse(response *FetchResponse) ([]*Consu
 		if partialTrailingMessage {
 			if child.conf.Consumer.Fetch.Max > 0 && child.fetchSize == child.conf.Consumer.Fetch.Max {
 				// we can't ask for more data, we've hit the configured limit
-				child.sendError(ErrMessageTooLarge)
+				child.sendError(ErrMessageTooLarge, "error while consuming message: message too large")
 				child.offset++ // skip this one so we can keep processing future messages
 			} else {
 				child.fetchSize *= 2
@@ -930,7 +931,7 @@ func (bc *brokerConsumer) subscriptionConsumer() {
 		response, err := bc.fetchNewMessages()
 		if err != nil {
 			Logger.Printf("consumer/broker/%d disconnecting due to error processing FetchRequest: %s\n", bc.broker.ID(), err)
-			bc.abort(err)
+			bc.abort(err, "error fetching messages (subscriptionconsumer)")
 			return
 		}
 
@@ -992,7 +993,7 @@ func (bc *brokerConsumer) handleResponses() {
 		case ErrOffsetOutOfRange:
 			// there's no point in retrying this it will just fail the same way again
 			// shut it down and force the user to choose what to do
-			child.sendError(result)
+			child.sendError(result, "broker consumer: error offset out of range")
 			Logger.Printf("consumer/%s/%d shutting down because %s\n", child.topic, child.partition, result)
 			close(child.trigger)
 			delete(bc.subscriptions, child)
@@ -1004,7 +1005,7 @@ func (bc *brokerConsumer) handleResponses() {
 			delete(bc.subscriptions, child)
 		default:
 			// dunno, tell the user and try redispatching
-			child.sendError(result)
+			child.sendError(result, "broker consumer: default error while dispatching")
 			Logger.Printf("consumer/broker/%d abandoned subscription to %s/%d because %s\n",
 				bc.broker.ID(), child.topic, child.partition, result)
 			child.trigger <- none{}
@@ -1013,12 +1014,12 @@ func (bc *brokerConsumer) handleResponses() {
 	}
 }
 
-func (bc *brokerConsumer) abort(err error) {
+func (bc *brokerConsumer) abort(err error, message string) {
 	bc.consumer.abandonBrokerConsumer(bc)
 	_ = bc.broker.Close() // we don't care about the error this might return, we already have one
 
 	for child := range bc.subscriptions {
-		child.sendError(err)
+		child.sendError(err, message)
 		child.trigger <- none{}
 	}
 
@@ -1028,7 +1029,7 @@ func (bc *brokerConsumer) abort(err error) {
 			continue
 		}
 		for _, child := range newSubscriptions {
-			child.sendError(err)
+			child.sendError(err, message)
 			child.trigger <- none{}
 		}
 	}

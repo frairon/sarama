@@ -255,13 +255,13 @@ func (om *offsetManager) flushToBroker() {
 
 	broker, err := om.coordinator()
 	if err != nil {
-		om.handleError(err)
+		om.handleError(err, "offset manager: error getting coordinator")
 		return
 	}
 
 	resp, err := broker.CommitOffset(req)
 	if err != nil {
-		om.handleError(err)
+		om.handleError(err, "offset manager: error commiting offsets")
 		om.releaseCoordinator(broker)
 		_ = broker.Close()
 		return
@@ -325,11 +325,11 @@ func (om *offsetManager) handleResponse(broker *Broker, req *OffsetCommitRequest
 			var ok bool
 
 			if resp.Errors[pom.topic] == nil {
-				pom.handleError(ErrIncompleteResponse)
+				pom.handleError(ErrIncompleteResponse, "topic manager response incomplete")
 				continue
 			}
 			if err, ok = resp.Errors[pom.topic][pom.partition]; !ok {
-				pom.handleError(ErrIncompleteResponse)
+				pom.handleError(ErrIncompleteResponse, "topic manager response incomplete")
 				continue
 			}
 
@@ -343,7 +343,7 @@ func (om *offsetManager) handleResponse(broker *Broker, req *OffsetCommitRequest
 				om.releaseCoordinator(broker)
 			case ErrOffsetMetadataTooLarge, ErrInvalidCommitOffsetSize:
 				// nothing we can do about this, just tell the user and carry on
-				pom.handleError(err)
+				pom.handleError(err, "err offset metadata too large, and invalid commit offset size")
 			case ErrOffsetsLoadInProgress:
 				// nothing wrong but we didn't commit, we'll get it next time round
 			case ErrUnknownTopicOrPartition:
@@ -354,20 +354,20 @@ func (om *offsetManager) handleResponse(broker *Broker, req *OffsetCommitRequest
 				fallthrough
 			default:
 				// dunno, tell the user and try redispatching
-				pom.handleError(err)
+				pom.handleError(err, "default/unknown errror while handling offset manager response")
 				om.releaseCoordinator(broker)
 			}
 		}
 	}
 }
 
-func (om *offsetManager) handleError(err error) {
+func (om *offsetManager) handleError(err error, message string) {
 	om.pomsLock.RLock()
 	defer om.pomsLock.RUnlock()
 
 	for _, topicManagers := range om.poms {
 		for _, pom := range topicManagers {
-			pom.handleError(err)
+			pom.handleError(err, message)
 		}
 	}
 }
@@ -572,9 +572,10 @@ func (pom *partitionOffsetManager) Close() error {
 	return nil
 }
 
-func (pom *partitionOffsetManager) handleError(err error) {
+func (pom *partitionOffsetManager) handleError(err error, message string) {
 	cErr := &ConsumerError{
 		Topic:     pom.topic,
+		Message:   message,
 		Partition: pom.partition,
 		Err:       err,
 	}
